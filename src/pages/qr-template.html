@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp QR Code</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .qr-container {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+            display: inline-block;
+        }
+
+        #qrcode {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #qrcode img {
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .instructions {
+            color: #555;
+            margin-top: 30px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .instructions ol {
+            text-align: left;
+            display: inline-block;
+            margin-top: 15px;
+        }
+
+        .instructions li {
+            margin: 8px 0;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status.waiting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WhatsApp QR Code</h1>
+        <p class="subtitle">Scan this QR code with your WhatsApp mobile app</p>
+        
+        <div class="qr-container">
+            <div id="qrcode">
+                <div class="loading"></div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <strong>Instructions:</strong>
+            <ol>
+                <li>Open WhatsApp on your phone</li>
+                <li>Go to Settings → Linked Devices</li>
+                <li>Tap "Link a Device"</li>
+                <li>Point your phone at this QR code</li>
+            </ol>
+        </div>
+
+        <div id="status" class="status waiting">
+            Waiting for QR code...
+        </div>
+    </div>
+
+    <script>
+        // Function to update QR code
+        function updateQRCode(qrData) {
+            const qrcodeDiv = document.getElementById('qrcode');
+            const statusDiv = document.getElementById('status');
+            
+            // Fetch QR code image from server
+            fetch('/api/qrcode')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.qr) {
+                        qrcodeDiv.innerHTML = `<img src="${data.qr}" alt="QR Code" />`;
+                        statusDiv.textContent = 'QR Code ready! Scan it with your phone.';
+                        statusDiv.className = 'status waiting';
+                    } else {
+                        qrcodeDiv.innerHTML = '<div class="loading"></div>';
+                        statusDiv.textContent = 'Waiting for QR code...';
+                        statusDiv.className = 'status waiting';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching QR code:', error);
+                    statusDiv.textContent = 'Error loading QR code. Please refresh the page.';
+                });
+        }
+
+        // Check for ready status
+        function checkStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('status');
+                    if (data.ready) {
+                        statusDiv.textContent = '✅ WhatsApp is connected and ready!';
+                        statusDiv.className = 'status ready';
+                        document.getElementById('qrcode').innerHTML = '<p style="color: #28a745; font-size: 18px;">✓ Connected</p>';
+                    } else if (data.qr) {
+                        updateQRCode(data.qr);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking status:', error);
+                });
+        }
+
+        // Initial load
+        updateQRCode();
+
+        // Poll for QR code updates every 2 seconds
+        setInterval(() => {
+            checkStatus();
+        }, 2000);
+    </script>
+</body>
+</html>
+
