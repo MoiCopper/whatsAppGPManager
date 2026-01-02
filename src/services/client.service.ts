@@ -36,14 +36,34 @@ export class ClientService {
         }
 
         try {
-            const userId = msg.author || msg.from;
             const chat = await msg.getChat() as GroupChat;
-            const participant = chat.participants.find(
-                p => p.id._serialized === msg.author || msg.from
+            
+            // Get the proper contact ID - msg.author might be @lid format, convert to @c.us format
+            let userId = msg.author || msg.from;
+            let participant = chat.participants.find(
+                p => p.id._serialized === userId || (p as any).id_serialized === userId
             );
+            
+            // If participant not found and userId is @lid format, convert it to @c.us format
+            if (!participant && userId) {
+                const phoneNumberId = await whatsappService.convertLidToPhoneNumber(userId);
+                if (phoneNumberId) {
+                    userId = phoneNumberId;
+                    participant = chat.participants.find(
+                        p => p.id._serialized === userId
+                    );
+                }
+            }
 
-            if (timeoutCommand.isUserTimedOut(userId)) {
-                if (!timeoutCommand.checkAndRemoveExpiredTimeout(userId)) {
+            // console.log(participant, 'participant', userId)
+            // console.log(userId, 'userId')
+            // console.log(JSON.stringify(chat.participants), 'chat.participants')
+            // console.log(msg.author, 'msg.author')
+            // console.log(msg.from, 'msg.from')
+            
+            const userAuthor = msg.author || msg.from;
+            if (timeoutCommand.isUserTimedOut(userAuthor)) {
+                if (!timeoutCommand.checkAndRemoveExpiredTimeout(userAuthor)) {
                     return;
                 }
                 
@@ -65,10 +85,10 @@ export class ClientService {
             const isGroupRegistered = await dbService.groupExists(chat.id._serialized);
             if(isGroupRegistered){
                 const group = await dbService.getGroup(chat.id._serialized) as Group;
-                const member = group?.members[msg.author || msg.from];
+                const member = group?.members[userAuthor];
                 if(!member){
                     await dbService.createMember(chat.id._serialized, {
-                        id: participant?.id._serialized || (msg.author || msg.from),
+                        id: participant?.id._serialized || userAuthor,
                         name: whatsappService.getNotifyName(msg),
                         isAdmin: participant?.isAdmin || false,
                     });
@@ -78,13 +98,13 @@ export class ClientService {
 
                 if(member.name === ''){
                     member.name = whatsappService.getNotifyName(msg);
-                    await dbService.updateMember(chat.id._serialized, msg.author || msg.from, {
+                    await dbService.updateMember(chat.id._serialized, userAuthor, {
                         name: member.name
                     });
                 }
 
                 member.numberOfMessages++;
-                await dbService.updateMember(chat.id._serialized, msg.author || msg.from, {
+                await dbService.updateMember(chat.id._serialized, userAuthor, {
                     numberOfMessages: member.numberOfMessages
                 });
             }

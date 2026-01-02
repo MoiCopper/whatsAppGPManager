@@ -10,6 +10,13 @@ export class RegisterGroupCommand {
         const chat = await msg.getChat() as GroupChat;
         const groupId = chat.id._serialized;
         const groupName = chat.name;
+
+        const isGroupRegistered = await this.dbService.groupExists(groupId);
+        if(isGroupRegistered){
+            msg.reply(`BOT: Grupo ${groupName} já está registrado meu amooor 😍🤖`);
+            return;
+        }
+
         const groupDescription = chat.description;
         const members: Record<string, Member> = {};
         const participants = await chat.participants;

@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { DB, Group, Member } from '../interfaces/db.interface';
+import { whatsappService } from '../dependencies/instances';
 
 export class DBService {
     private dbPath: string;
@@ -376,7 +377,14 @@ export class DBService {
         }
 
         try {
-            const member = this.db.groups[groupId]?.members[memberId];
+            let member = this.db.groups[groupId]?.members[memberId];
+
+            if(!member){
+                const phoneNumberId = await whatsappService.convertLidToPhoneNumber(memberId);
+                if(phoneNumberId){
+                    member = this.db.groups[groupId]?.members[phoneNumberId];
+                }
+            }
             
             if (member && member.name && member.name.trim() !== '') {
                 return member.name;
