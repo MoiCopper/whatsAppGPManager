@@ -8,6 +8,7 @@ import { WhatsAppRepository } from '../repositories/whatsAppRepository';
 import { CheckPunishments } from '../bot/checkPunishments';
 import { PingCommand } from '../bot/commands/ping';
 import { SetFreeCommand } from '../bot/commands/setFree';
+import { EventBus } from './events/EventBus';
 
 /**
  * Singleton instances manager
@@ -55,6 +56,7 @@ function createLazyProxy<T extends object>(name: string): T {
 }
 
 // Registrar todas as dependências
+container.register('eventBus', () => new EventBus());
 container.register('timeoutCommand', () => new TimeoutCommand());
 container.register('clientService', () => new ClientService());
 container.register('dBRepository', () => new DBRepository());
@@ -66,6 +68,7 @@ container.register('pingCommand', () => new PingCommand());
 container.register('setFreeCommand', () => new SetFreeCommand());
 
 // Exportar instâncias como proxies para lazy initialization
+export const eventBus = container.get<EventBus>('eventBus'); // Singleton direto, não lazy
 export const timeoutCommand = createLazyProxy<TimeoutCommand>('timeoutCommand');
 export const clientService = createLazyProxy<ClientService>('clientService');
 export const dBRepository = createLazyProxy<DBRepository>('dBRepository');
