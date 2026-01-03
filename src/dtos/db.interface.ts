@@ -17,15 +17,26 @@ export interface Member {
         warn: number;
         note: string;
     };
-    currentPunishment?: {
-        type: 'timeout' | 'mute' | 'ban' | 'kick' | 'warn';
-        duration: number;
-        reason: string;
-        appliedAt: Date;
-        expiresAt: Date | null;
-    };
+    currentPunishment?: CurrentPunishment;
     menssagesIds: string[];
     numberOfMessages: number;
+}
+
+export interface CurrentPunishment {
+    type: 'timeout' | 'mute' | 'ban' | 'kick' | 'warn';
+    duration: number;
+    reason: string;
+    appliedAt: Date;
+    expiresAt: Date | null;
+}
+
+export interface CreateAPunishmentParams {
+    groupId: string;
+    memberId: string;
+    type: 'timeout' | 'mute' | 'ban' | 'kick' | 'warn';
+    duration: number;
+    reason: string;
+    expiresAt: Date;
 }
 
 export interface DB {

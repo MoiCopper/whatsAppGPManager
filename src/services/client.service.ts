@@ -1,117 +1,88 @@
-import { Message, GroupChat } from 'whatsapp-web.js';
-import { Client } from 'whatsapp-web.js';
+import { Message } from 'whatsapp-web.js';
 import { setReadyStatus, updateQRCode } from '../api';
-import { whatsappService, timeoutCommand } from '../dependencies/instances';
-import { cdmCommandHandler } from '../commands/cdm';
-import { dbService } from '../dependencies/instances';
-import { Group, Member } from '../interfaces/db.interface';
+import { checkPunishments, whatsAppRepository } from '../shared/containers';
+import { cdmCommandHandler } from '../bot/cdm';
+import { dBRepository } from '../shared/containers';
+import { Group } from '../dtos/db.interface';
+import { ErrorHandler } from '../shared/ErrorHandler';
+
 
 export class ClientService {
-    private client: Client;
-
-    constructor(client: Client) {
-        this.client = client;
-    }
-
-    /**
-     * Handle client ready event
-     */
     onReady(): void {
         console.log('Client is ready!');
         setReadyStatus(true);
     }
 
-    /**
-     * Handle QR code generation event
-     */
     onQR(qr: string): void {
-        // Store QR code for web display
         updateQRCode(qr);
     }
 
     
     async onMessageCreate(msg: Message): Promise<void> {
-        if (msg.fromMe && msg.body.includes('BOT:')) {
+        if ((msg.fromMe && msg.body.includes('BOT:'))) {
             return;
         }
 
         try {
-            const chat = await msg.getChat() as GroupChat;
+            const chat = await whatsAppRepository.getChat(msg.to, msg);
             
-            // Get the proper contact ID - msg.author might be @lid format, convert to @c.us format
-            let userId = msg.author || msg.from;
-            let participant = chat.participants.find(
-                p => p.id._serialized === userId || (p as any).id_serialized === userId
-            );
-            
-            // If participant not found and userId is @lid format, convert it to @c.us format
-            if (!participant && userId) {
-                const phoneNumberId = await whatsappService.convertLidToPhoneNumber(userId);
-                if (phoneNumberId) {
-                    userId = phoneNumberId;
-                    participant = chat.participants.find(
-                        p => p.id._serialized === userId
-                    );
-                }
+            if(!chat.isGroup){
+                return;
             }
 
-            // console.log(participant, 'participant', userId)
-            // console.log(userId, 'userId')
-            // console.log(JSON.stringify(chat.participants), 'chat.participants')
-            // console.log(msg.author, 'msg.author')
-            // console.log(msg.from, 'msg.from')
-            
-            const userAuthor = msg.author || msg.from;
-            if (timeoutCommand.isUserTimedOut(userAuthor)) {
-                if (!timeoutCommand.checkAndRemoveExpiredTimeout(userAuthor)) {
-                    return;
-                }
-                
-                await this.client.sendMessage(
-                    chat.id._serialized,
-                    `BOT: CALMA ${whatsappService.getNotifyName(msg).toUpperCase()}, VOCE ESTA DE BOCA CHEIA GLUB GLUB GLUB 🍆🍆🍆`
-                );
-                msg.delete(true);
+            const groupParticipant = await whatsAppRepository.getParticipant(msg);
+
+            if(!groupParticipant.participant){
+                console.error('Group participant not found');
+                return;
+            }
+
+            const { isPunished } = await checkPunishments.checkPunishments(msg);
+            if (isPunished) {
                 return;
             }
 
             if (msg.body.startsWith('/')) {
                 console.log('Command received:', msg.body);
-                if (participant?.isAdmin) {
+                if (groupParticipant.participant?.isAdmin) {
                     cdmCommandHandler(msg);
                 }
             }
 
-            const isGroupRegistered = await dbService.groupExists(chat.id._serialized);
+            const isGroupRegistered = await dBRepository.groupExists(chat.id._serialized);
             if(isGroupRegistered){
-                const group = await dbService.getGroup(chat.id._serialized) as Group;
-                const member = group?.members[userAuthor];
+                const group = await dBRepository.getGroup(chat.id._serialized) as Group;
+                const member = group?.members[groupParticipant.id];
                 if(!member){
-                    await dbService.createMember(chat.id._serialized, {
-                        id: participant?.id._serialized || userAuthor,
-                        name: whatsappService.getNotifyName(msg),
-                        isAdmin: participant?.isAdmin || false,
+                    await dBRepository.createMember(chat.id._serialized, {
+                        id: groupParticipant.id,
+                        name: whatsAppRepository.getNotifyName(msg),
+                        isAdmin: groupParticipant.participant.isAdmin,
                     });
                     
                     return;
                 }
 
                 if(member.name === ''){
-                    member.name = whatsappService.getNotifyName(msg);
-                    await dbService.updateMember(chat.id._serialized, userAuthor, {
+                    member.name = whatsAppRepository.getNotifyName(msg);
+                    await dBRepository.updateMember(chat.id._serialized, groupParticipant.id, {
                         name: member.name
                     });
                 }
 
                 member.numberOfMessages++;
-                await dbService.updateMember(chat.id._serialized, userAuthor, {
+                await dBRepository.updateMember(chat.id._serialized, groupParticipant.id, {
                     numberOfMessages: member.numberOfMessages
                 });
             }
 
         } catch (error) {
-            console.error('Error processing message:', error);
-            msg.reply('BOT: 🤖🤖🤖 MOISES FEZ ALGUMA COISA DE ERRADO KKKKK PQ O BOT NAO ENTENDEU NADA');
+            ErrorHandler.handle(error as Error, 'ClientService.onMessageCreate');
+            try {
+                msg.reply('BOT: 🤖🤖🤖 MOISES FEZ ALGUMA COISA DE ERRADO KKKKK PQ O BOT NAO ENTENDEU NADA');
+            } catch (replyError) {
+                ErrorHandler.handle(replyError as Error, 'ClientService.onMessageCreate.reply');
+            }
         }
     }
 
@@ -119,14 +90,14 @@ export class ClientService {
      * Handle authentication failure event
      */
     onAuthFailure(msg: string): void {
-        console.error('Authentication failed:', msg);
+        ErrorHandler.handle(new Error(`Authentication failed: ${msg}`), 'ClientService.onAuthFailure');
     }
 
     /**
      * Handle client disconnected event
      */
     onDisconnected(reason: string): void {
-        console.log('Client was disconnected:', reason);
+        ErrorHandler.handle(new Error(`Client disconnected: ${reason}`), 'ClientService.onDisconnected');
     }
 }
 

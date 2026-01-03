@@ -1,22 +1,15 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { DB, Group, Member } from '../interfaces/db.interface';
-import { whatsappService } from '../dependencies/instances';
+import { CreateAPunishmentParams, CurrentPunishment, DB, Group, Member } from '../dtos/db.interface';
+import { whatsAppRepository } from '../shared/containers';
 
-export class DBService {
+export class DBRepository {
     private dbPath: string;
     private db: DB;
     private isInitialized: boolean = false;
 
-    constructor(dbPath?: string) {
-        // Usa o caminho fornecido ou o padrão relativo ao projeto
-        if (dbPath) {
-            this.dbPath = dbPath;
-        } else {
-            // Sempre usa process.cwd() que aponta para a raiz do projeto
-            // Tanto em desenvolvimento (tsx) quanto em produção (node dist/index.js)
-            this.dbPath = path.join(process.cwd(), 'db', 'db.json');
-        }
+    constructor() {
+        this.dbPath = path.join(process.cwd(), 'db', 'db.json');
         this.db = { groups: {} };
     }
 
@@ -51,7 +44,7 @@ export class DBService {
             
             // Valida a estrutura
             if (!parsed || typeof parsed !== 'object') {
-                throw new Error('Invalid JSON structure: root is not an object');
+                console.error('Invalid JSON structure: root is not an object');
             }
             
             // Garante que groups existe e é um objeto
@@ -196,7 +189,7 @@ export class DBService {
         }
 
         if (!this.db.groups[groupId]) {
-            throw new Error(`Group with id ${groupId} not found`);
+            console.error(`Group with id ${groupId} not found`);
         }
 
         this.db.groups[groupId] = {
@@ -242,7 +235,7 @@ export class DBService {
         };
 
         if (!this.db.groups[groupId]) {
-            throw new Error(`Group with id ${groupId} not found`);
+            console.error(`Group with id ${groupId} not found`);
         }
 
         this.db.groups[groupId].members[member.id as string] = newMember as Member;
@@ -260,11 +253,11 @@ export class DBService {
         }
 
         if (!this.db.groups[groupId]) {
-            throw new Error(`Group with id ${groupId} not found`);
+            console.error(`Group with id ${groupId} not found`);
         }
 
         if (!this.db.groups[groupId].members[memberId]) {
-            throw new Error(`Member with id ${memberId} not found in group ${groupId}`);
+            console.error(`Member with id ${memberId} not found in group ${groupId}`);
         }
 
         this.db.groups[groupId].members[memberId] = {
@@ -284,11 +277,11 @@ export class DBService {
         }
 
         if (!this.db.groups[groupId]) {
-            throw new Error(`Group with id ${groupId} not found`);
+            console.error(`Group with id ${groupId} not found`);
         }
 
         if (!this.db.groups[groupId].members[memberId]) {
-            throw new Error(`Member with id ${memberId} not found in group ${groupId}`);
+            console.error(`Member with id ${memberId} not found in group ${groupId}`);
         }
 
         const member = this.db.groups[groupId].members[memberId];
@@ -316,11 +309,11 @@ export class DBService {
         }
 
         if (!this.db.groups[groupId]) {
-            throw new Error(`Group with id ${groupId} not found`);
+            console.error(`Group with id ${groupId} not found`);
         }
 
         if (!this.db.groups[groupId].members[memberId]) {
-            throw new Error(`Member with id ${memberId} not found in group ${groupId}`);
+            console.error(`Member with id ${memberId} not found in group ${groupId}`);
         }
 
         const member = this.db.groups[groupId].members[memberId];
@@ -380,7 +373,7 @@ export class DBService {
             let member = this.db.groups[groupId]?.members[memberId];
 
             if(!member){
-                const phoneNumberId = await whatsappService.convertLidToPhoneNumber(memberId);
+                const phoneNumberId = await whatsAppRepository.convertLidToPhoneNumber(memberId);
                 if(phoneNumberId){
                     member = this.db.groups[groupId]?.members[phoneNumberId];
                 }
@@ -407,6 +400,52 @@ export class DBService {
         }
 
         return this.db.groups;
+    }
+
+    async createAPunishment({groupId, memberId, type, duration, reason, expiresAt}: CreateAPunishmentParams): Promise<void> {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+
+        if (!this.db.groups[groupId]) {
+            console.error(`Group with id ${groupId} not found`);
+        }
+
+        if (!this.db.groups[groupId].members[memberId]) {
+            console.error(`Member with id ${memberId} not found in group ${groupId}`);
+        }
+
+        const member = this.db.groups[groupId].members[memberId];
+        member.punishments[type] = (member.punishments[type] || 0) + 1;
+        member.currentPunishment = {
+            type,
+            duration,
+            reason,
+            appliedAt: new Date(),
+            expiresAt: expiresAt
+        };
+        await this.persist();
+    }
+
+    async deleteCurrentPunishment(groupId: string, memberId: string): Promise<void> {
+        if (!this.db.groups[groupId]) {
+            console.error(`Group with id ${groupId} not found`);
+        }
+
+        if (!this.db.groups[groupId].members[memberId]) {
+            console.error(`Member with id ${memberId} not found in group ${groupId}`);
+        }
+
+        this.db.groups[groupId].members[memberId].currentPunishment = undefined;
+        await this.persist();
+    }
+
+    async getCurrentPunishment(groupId: string, memberId: string): Promise<CurrentPunishment | undefined> {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+
+        return this.db.groups[groupId]?.members[memberId]?.currentPunishment;
     }
 }
 

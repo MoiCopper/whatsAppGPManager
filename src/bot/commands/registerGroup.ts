@@ -1,9 +1,17 @@
 import { GroupChat, Message } from "whatsapp-web.js";
-import { DBService } from "../services/db.service";
-import { Member } from "../interfaces/db.interface";
+import { dBRepository } from '../../shared/containers';
+import { Member } from "../../dtos/db.interface";
+import { ICommand } from './ICommand';
+import { ErrorHandler } from '../../shared/ErrorHandler';
 
-export class RegisterGroupCommand {
-    constructor(private dbService: DBService) {
+export class RegisterGroupCommand implements ICommand {
+    async execute(msg: Message): Promise<void> {
+        try {
+            await this.registerGroup(msg);
+        } catch (error) {
+            ErrorHandler.handle(error as Error, 'RegisterGroupCommand.execute');
+            throw error;
+        }
     }
 
     async registerGroup(msg: Message) {
@@ -11,7 +19,7 @@ export class RegisterGroupCommand {
         const groupId = chat.id._serialized;
         const groupName = chat.name;
 
-        const isGroupRegistered = await this.dbService.groupExists(groupId);
+        const isGroupRegistered = await dBRepository.groupExists(groupId);
         if(isGroupRegistered){
             msg.reply(`BOT: Grupo ${groupName} já está registrado meu amooor 😍🤖`);
             return;
@@ -38,7 +46,7 @@ export class RegisterGroupCommand {
             };
         }
 
-        const group = await this.dbService.registerGroup({
+        const group = await dBRepository.registerGroup({
             id: groupId,
             name: groupName,
             description: groupDescription,

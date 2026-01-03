@@ -1,7 +1,7 @@
 import express, { Request, Response, Express } from 'express';
 import path from 'path';
 import open from 'open';
-import { qrController } from './dependencies/instances';
+import { qrController } from './shared/containers';
 
 // Type declaration for __dirname (available in CommonJS runtime)
 declare const __dirname: string;

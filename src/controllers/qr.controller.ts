@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import QRCode from 'qrcode';
+import { ErrorHandler } from '../shared/ErrorHandler';
 
 export class QRController {
     private currentQR: string | null = null;
@@ -46,7 +47,7 @@ export class QRController {
                 const qrImageDataUrl = await QRCode.toDataURL(this.currentQR);
                 res.json({ qr: qrImageDataUrl });
             } catch (error) {
-                console.error('Error generating QR code image:', error);
+                ErrorHandler.handle(error as Error, 'QRController.getQRCode');
                 res.json({ qr: null });
             }
         } else {

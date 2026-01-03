@@ -1,49 +1,33 @@
-import { setClient, clientService } from '../dependencies/instances';
-import { IWhatsAppClient } from '../adapters/whatsapp-client.interface';
-import { WhatsAppClientAdapter } from '../adapters/whatsapp-client.adapter';
+import { clientService, whatsAppRepository } from '../shared/containers';
+import { EventsType } from '../dtos/eventsType.interface';
+import { Message } from 'whatsapp-web.js';
 
-export class ClientController {
-    private client: IWhatsAppClient;
-
-    constructor(client?: IWhatsAppClient) {
-        // Permite injetar um cliente para testes, ou usa o adapter padrão
-        this.client = client || new WhatsAppClientAdapter();
-        setClient(this.client.getInstance());
-        this.registerEvents();
-    }
-
-    private registerEvents(): void {
-        this.client.on('ready', () => {
-            clientService.onReady();
+export class ClientController { 
+    constructor() {}
+    public async registerEvents(): Promise<void> {
+        return new Promise((resolve) => {
+            whatsAppRepository.onChatEvent.subscribe((event) => {
+                switch (event.event) {
+                    case EventsType.READY:
+                        clientService.onReady();
+                        break;
+                    case EventsType.QR:
+                        clientService.onQR(event.data as string);
+                        break;
+                    case EventsType.MESSAGE_CREATE:
+                        clientService.onMessageCreate(event.data as Message);
+                        break;
+                    case EventsType.AUTH_FAILURE:
+                        clientService.onAuthFailure(event.data as string);
+                        break;
+                    case EventsType.DISCONNECTED:
+                        clientService.onDisconnected(event.data as string);
+                        break;
+                }
+                resolve();
+            });
         });
 
-        this.client.on('qr', (qr) => {
-            clientService.onQR(qr);
-        });
-
-        this.client.on('message_create', async (msg) => {
-            await clientService.onMessageCreate(msg);
-        });
-
-        this.client.on('auth_failure', (msg) => {
-            clientService.onAuthFailure(msg);
-        });
-
-        this.client.on('disconnected', (reason) => {
-            clientService.onDisconnected(reason);
-        });
-    }
-
-    /**
-     * Inicializa o cliente
-     */
-    public async initialize(): Promise<void> {
-        try {
-            await this.client.initialize();
-        } catch (error) {
-            console.error('Failed to initialize client:', error);
-            process.exit(1);
-        }
     }
 }
 
