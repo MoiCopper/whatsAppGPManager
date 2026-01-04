@@ -2,7 +2,12 @@ import { Subject } from "rxjs";
 import { WhatsAppClientAdapter } from "../adapters/whatsapp-client.adapter";
 import { EventsType, IWhatsAppEvent, IWhatsAppParticipant } from "../dtos/eventsType.interface";
 import { Client, GroupChat, Message } from "whatsapp-web.js";
-import { dBRepository } from "../shared/containers";
+import { dBRepository, eventBus } from "../shared/containers";
+import { DomainEventType } from "../shared/events/DomainEventType";
+import { ErrorHandler } from "../shared/ErrorHandler";
+import { MemberMessageSentPayload } from "../shared/events";
+import qrcodeTerminal from "qrcode-terminal";
+import { setReadyStatus, updateQRCode } from '../api';
 
 export class WhatsAppRepository {
     private client:WhatsAppClientAdapter
@@ -23,33 +28,80 @@ export class WhatsAppRepository {
 
     private registerEvents(): void {
         this.client.on(EventsType.READY, () => {
+            setReadyStatus(true);
             this.onChatEvent.next({ event: EventsType.READY, data: null });
         });
 
         this.client.on(EventsType.QR, (qr) => {
+            qrcodeTerminal.generate(qr, { small: true });
+            updateQRCode(qr);
             this.onChatEvent.next({ event: EventsType.QR, data: qr });
         });
 
         this.client.on(EventsType.MESSAGE_CREATE, async (msg) => {
-            this.onChatEvent.next({ event: EventsType.MESSAGE_CREATE, data: msg });
+            if (this.isBotMessage(msg)) {
+                return;
+            }
+
+            const isGroupChat = await this.isGroupChat(msg);
+
+            if (!isGroupChat) {
+                return;
+            }
+
+            await this.emitMemberMessageSent(msg);
         }); 
 
         this.client.on(EventsType.AUTH_FAILURE, (msg) => {
+            ErrorHandler.handle(new Error(`Authentication failed: ${msg}`), 'ClientService.onAuthFailure');
             this.onChatEvent.next({ event: EventsType.AUTH_FAILURE, data: msg });
         });
 
         this.client.on(EventsType.DISCONNECTED, (reason) => {
+            ErrorHandler.handle(new Error(`Client disconnected: ${reason}`), 'ClientService.onDisconnected');
             this.onChatEvent.next({ event: EventsType.DISCONNECTED, data: reason });
         });
     }
 
-    public async getChat(chatId: string, msg: Message): Promise<GroupChat> {
-        let chat = this.chats.get(chatId);
-        if(!chat){
-            chat = await msg.getChat() as GroupChat;
-            this.chats.set(chatId, chat);
+    private async isGroupChat(msg: Message): Promise<boolean> {
+        const chat = await this.getChat(msg.to, msg);
+        return chat.isGroup;
+    }
+
+    private isBotMessage(msg: Message): boolean {
+        return msg.fromMe && msg.body.includes('BOT:');
+    }
+    
+    private async emitMemberMessageSent(msg: Message): Promise<void> {
+        const chat = await this.getChat(msg.to, msg);
+        const groupParticipant = await this.getParticipant(msg);
+        if(!groupParticipant.participant){
+            ErrorHandler.handle(new Error('Group participant not found'), 'WhatsAppRepository.registerEvents.MESSAGE_CREATE');
+            return;
         }
-        return chat;
+        eventBus.emit<MemberMessageSentPayload>({
+            type: DomainEventType.MEMBER_MESSAGE_SENT,
+            payload: {
+                groupId: chat.id._serialized,
+                memberId: groupParticipant.id,
+                name: this.getNotifyName(msg),
+                isAdmin: groupParticipant.participant?.isAdmin || false,
+                message: msg
+            },
+            metadata: {
+                groupId: chat.id._serialized,
+                userId: groupParticipant.id
+            }
+        });
+    }
+
+    public async getChat(chatId: string, msg: Message): Promise<GroupChat> {
+        // let chat = this.chats.get(chatId);
+        // if(!chat){
+        //     chat = await msg.getChat() as GroupChat;
+        //     this.chats.set(chatId, chat);
+        // }
+        return await msg.getChat() as GroupChat;
     }
 
     public async setChat(chatId: string, chat: GroupChat): Promise<void> {

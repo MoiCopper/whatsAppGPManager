@@ -1,5 +1,5 @@
 import { Subject, Observable } from 'rxjs';
-import { filter } from 'rxjs/operators';
+import { filter, map } from 'rxjs/operators';
 import { DomainEvent } from './DomainEvent';
 import { DomainEventType } from './DomainEventType';
 
@@ -12,15 +12,17 @@ export class EventBus {
     
     /**
      * Emite um evento para todos os listeners
+     * @template TPayload - Tipo do payload do evento
      * @param event - Evento de domínio a ser emitido
      */
-    emit(event: Omit<DomainEvent, 'timestamp'>): void {
-        const domainEvent: DomainEvent = {
+    emit<TPayload = any>(event: Omit<DomainEvent<TPayload>, 'timestamp'>): void {
+        const domainEvent: DomainEvent<TPayload> = {
             ...event,
             timestamp: new Date()
         };
         
-        this.eventSubject.next(domainEvent);
+        console.log(`[EventBus] Emitindo evento: ${event.type}`);
+        this.eventSubject.next(domainEvent as DomainEvent);
     }
     
     /**
@@ -33,12 +35,14 @@ export class EventBus {
     
     /**
      * Escuta eventos de um tipo específico
+     * @template TPayload - Tipo do payload esperado
      * @param eventType - Tipo do evento a ser escutado
-     * @returns Observable filtrado por tipo de evento
+     * @returns Observable filtrado por tipo de evento com payload tipado
      */
-    on(eventType: DomainEventType): Observable<DomainEvent> {
+    on<TPayload = any>(eventType: DomainEventType): Observable<DomainEvent<TPayload>> {
         return this.eventSubject.pipe(
-            filter(event => event.type === eventType)
+            filter(event => event.type === eventType),
+            map(event => event as DomainEvent<TPayload>)
         );
     }
     

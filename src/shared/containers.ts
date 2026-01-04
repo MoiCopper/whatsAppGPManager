@@ -1,7 +1,6 @@
 import { Client } from 'whatsapp-web.js';
 import { TimeoutCommand } from '../bot/commands/timeout';
 import { QRController } from '../controllers/qr.controller';
-import { ClientService } from '../services/client.service';
 import { DBRepository } from '../repositories/dbRepository';
 import { RegisterGroupCommand } from '../bot/commands/registerGroup';
 import { WhatsAppRepository } from '../repositories/whatsAppRepository';
@@ -58,7 +57,6 @@ function createLazyProxy<T extends object>(name: string): T {
 // Registrar todas as dependências
 container.register('eventBus', () => new EventBus());
 container.register('timeoutCommand', () => new TimeoutCommand());
-container.register('clientService', () => new ClientService());
 container.register('dBRepository', () => new DBRepository());
 container.register('registerGroupCommand', () => new RegisterGroupCommand());
 container.register('qrController', () => new QRController());
@@ -66,16 +64,36 @@ container.register('whatsAppRepository', () => new WhatsAppRepository());
 container.register('checkPunishments', () => new CheckPunishments());
 container.register('pingCommand', () => new PingCommand());
 container.register('setFreeCommand', () => new SetFreeCommand());
+// Handlers não são mais dependências do container - são inicializados via EventHandlersInitializer
 
 // Exportar instâncias como proxies para lazy initialization
 export const eventBus = container.get<EventBus>('eventBus'); // Singleton direto, não lazy
-export const timeoutCommand = createLazyProxy<TimeoutCommand>('timeoutCommand');
-export const clientService = createLazyProxy<ClientService>('clientService');
-export const dBRepository = createLazyProxy<DBRepository>('dBRepository');
-export const registerGroupCommand = createLazyProxy<RegisterGroupCommand>('registerGroupCommand');
+// timeoutCommand é criado diretamente (não lazy) porque se registra no construtor
+// Isso garante que os listeners sejam registrados antes de qualquer evento ser emitido
+export const timeoutCommand = container.get<TimeoutCommand>('timeoutCommand');
+// dBRepository e checkPunishments são criados diretamente (não lazy) porque se registram no construtor
+// Isso garante que os listeners sejam registrados antes de qualquer evento ser emitido
+export const dBRepository = container.get<DBRepository>('dBRepository');
+export const checkPunishments = container.get<CheckPunishments>('checkPunishments');
+export const registerGroupCommand = container.get<RegisterGroupCommand>('registerGroupCommand');
 export const qrController = container.get<QRController>('qrController');
-export const whatsAppRepository = createLazyProxy<WhatsAppRepository>('whatsAppRepository');
-export const checkPunishments = createLazyProxy<CheckPunishments>('checkPunishments');
-export const pingCommand = createLazyProxy<PingCommand>('pingCommand');
-export const setFreeCommand = createLazyProxy<SetFreeCommand>('setFreeCommand');
+// whatsAppRepository é criado diretamente (não lazy) porque precisa inicializar o cliente no construtor
+// Isso garante que o cliente seja inicializado e os eventos de QR sejam emitidos
+export const whatsAppRepository = container.get<WhatsAppRepository>('whatsAppRepository');
+export const pingCommand = container.get<PingCommand>('pingCommand');
+export const setFreeCommand = container.get<SetFreeCommand>('setFreeCommand');
+// Handlers não são mais exportados do container - são inicializados via EventHandlersInitializer
+
+// Forçar criação imediata de componentes que se registram no construtor
+// Isso garante que os listeners sejam registrados antes de qualquer evento ser emitido
+// Apenas acessar as instâncias já criadas acima força a inicialização completa
+const _forceInit = () => {
+    // Acessar as instâncias garante que os construtores sejam executados
+    // e os listeners sejam registrados no EventBus
+    // whatsAppRepository também precisa ser inicializado para que o cliente seja configurado
+    if (dBRepository && checkPunishments && timeoutCommand && registerGroupCommand && pingCommand && setFreeCommand && whatsAppRepository) {
+        // Instâncias já criadas acima, listeners já registrados
+    }
+};
+_forceInit();
 

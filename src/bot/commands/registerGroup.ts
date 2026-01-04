@@ -1,10 +1,19 @@
 import { GroupChat, Message } from "whatsapp-web.js";
-import { dBRepository } from '../../shared/containers';
+import { dBRepository, eventBus } from '../../shared/containers';
 import { Member } from "../../dtos/db.interface";
 import { ICommand } from './ICommand';
 import { ErrorHandler } from '../../shared/ErrorHandler';
+import { CommandExecutedPayload, DomainEvent, DomainEventType } from "../../shared/events";
 
 export class RegisterGroupCommand implements ICommand {
+    constructor() {
+        eventBus.on(DomainEventType.COMMAND_EXECUTED).subscribe(async ({payload}: DomainEvent<CommandExecutedPayload>) => {
+            console.log('[RegisterGroupCommand] Evento COMMAND_EXECUTED recebido, command:', payload.command);
+            if(payload.command === '/registerGroup'){
+                await this.execute(payload.message);
+            }
+        });
+    }
     async execute(msg: Message): Promise<void> {
         try {
             await this.registerGroup(msg);
@@ -27,7 +36,7 @@ export class RegisterGroupCommand implements ICommand {
 
         const groupDescription = chat.description;
         const members: Record<string, Member> = {};
-        const participants = await chat.participants;
+        const participants = chat.participants;
         for(const participant of participants){
             members[participant.id._serialized] = {
                 id: participant.id._serialized,
@@ -42,7 +51,7 @@ export class RegisterGroupCommand implements ICommand {
                     note: '',
                 },
                 menssagesIds: [],
-                numberOfMessages: 1
+                numberOfMessages: 0
             };
         }
 

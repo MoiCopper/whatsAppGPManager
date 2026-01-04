@@ -2,6 +2,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { CreateAPunishmentParams, CurrentPunishment, DB, Group, Member } from '../dtos/db.interface';
 import { whatsAppRepository } from '../shared/containers';
+import { eventBus } from "../shared/containers";
+import { DomainEvent, DomainEventType, MemberMessageSentPayload } from "../shared/events";
 
 export class DBRepository {
     private dbPath: string;
@@ -11,6 +13,29 @@ export class DBRepository {
     constructor() {
         this.dbPath = path.join(process.cwd(), 'db', 'db.json');
         this.db = { groups: {} };
+        console.log('[DBRepository] Registrando listener para MEMBER_MESSAGE_SENT');
+        eventBus.on(DomainEventType.MEMBER_MESSAGE_SENT).subscribe(async ({payload}: DomainEvent<MemberMessageSentPayload>) => {
+            console.log('[DBRepository] Evento MEMBER_MESSAGE_SENT recebido');
+            const {groupId, memberId, name, isAdmin, message} = payload;
+            const isGroupRegistered = await this.groupExists(groupId);
+            if(!isGroupRegistered) {
+                return;
+            }
+            
+            const group = await this.getGroup(groupId) as Group;
+            const member = group?.members[memberId];
+
+            if(!member) {
+                this.createMember(groupId, {id: memberId, name: name, isAdmin: isAdmin});
+                return;
+            }
+
+            if(member.name === '') {
+                member.name = name;
+                this.updateMember(groupId, memberId, {name: whatsAppRepository.getNotifyName(message)});
+                return;
+            }
+        });
     }
 
     /**

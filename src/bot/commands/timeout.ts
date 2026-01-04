@@ -2,12 +2,33 @@ import { Message } from 'whatsapp-web.js';
 import { parseTimeToMs } from '../../utils/parseTimeToMs';
 import { formatTimeDuration } from '../../utils/formatTimeDuration';
 import { extractTimeArgument } from '../../utils/extractTimeArgument';
-import { whatsAppRepository, dBRepository } from '../../shared/containers';
+import { whatsAppRepository, dBRepository, eventBus, checkPunishments } from '../../shared/containers';
 import { startOfHour, isBefore } from 'date-fns';
 import { ICommand } from './ICommand';
 import { ErrorHandler } from '../../shared/ErrorHandler';
+import { CommandExecutedPayload, DomainEvent, DomainEventType, MemberMessageSentPayload, PunishmentCheckedPayload } from '../../shared/events';
 
 export class TimeoutCommand implements ICommand {
+
+    constructor() {
+        console.log('[TimeoutCommand] Registrando listeners...');
+        eventBus.on(DomainEventType.PUNISHMENT_CHECKED).subscribe(async ({payload}: DomainEvent<PunishmentCheckedPayload>) => {
+            console.log('[TimeoutCommand] Evento PUNISHMENT_CHECKED recebido');
+            if(payload.punishment.type === 'timeout'){
+                await this.checkAndRemoveExpiredTimeout(payload);
+            }
+        });
+        eventBus.on(DomainEventType.COMMAND_EXECUTED).subscribe(async ({payload}: DomainEvent<CommandExecutedPayload>) => {
+            console.log('[TimeoutCommand] Evento COMMAND_EXECUTED recebido, command:', payload.command);
+            // O comando vem com a barra inicial (ex: '/timeout')
+            if(payload.command === '/timeout'){
+                console.log('[TimeoutCommand] Processando comando /timeout');
+                await this.execute(payload.message);
+            }
+        });
+        console.log('[TimeoutCommand] Listeners registrados com sucesso');
+    }
+
     async execute(msg: Message): Promise<void> {
         try {
             await this.timeoutUser(msg);
@@ -34,13 +55,30 @@ export class TimeoutCommand implements ICommand {
             message: `BOT: ${await whatsAppRepository.getNotifyNameById(targetUserId, chat.id._serialized)} vai mamar por ${durationText}`});
 
 
+        const expiresAt = new Date(Date.now() + timeoutMs);
         await dBRepository.createAPunishment({
             groupId: chat.id._serialized, 
             memberId: targetUserId, 
             type: 'timeout', 
             duration: timeoutMs, 
             reason: 'Mamar', 
-            expiresAt: new Date(Date.now() + timeoutMs)});
+            expiresAt
+        });
+
+        // Emitir evento de timeout criado
+        eventBus.emit({
+            type: DomainEventType.TIMEOUT_CREATED,
+            payload: {
+                groupId: chat.id._serialized,
+                memberId: targetUserId,
+                duration: timeoutMs,
+                expiresAt: expiresAt.toISOString()
+            },
+            metadata: {
+                groupId: chat.id._serialized,
+                userId: targetUserId
+            }
+        });
     }
 
     async isUserTimedOut(msg: Message): Promise<boolean> {
@@ -59,19 +97,34 @@ export class TimeoutCommand implements ICommand {
         return !!(currentPunishment.expiresAt && isBefore(currentPunishment.expiresAt, startOfHour(new Date())));   
     }
 
-    async checkAndRemoveExpiredTimeout(msg: Message): Promise<void> {
-        const chat = await whatsAppRepository.getChat(msg.to, msg);
-        const timeout = await dBRepository.getCurrentPunishment(msg.to, chat.id._serialized);
-        if (timeout && isBefore(timeout.expiresAt as Date, startOfHour(new Date()))) {
-            await dBRepository.deleteCurrentPunishment(msg.to, chat.id._serialized);
+    async checkAndRemoveExpiredTimeout({groupId, memberId, message, punishment}: PunishmentCheckedPayload): Promise<void> {
+        const chat = await whatsAppRepository.getChat(groupId, message);
+        const now = new Date(Date.now());
+        if (punishment.expiresAt && isBefore(punishment.expiresAt as Date, now)) {
+            await dBRepository.deleteCurrentPunishment(groupId, memberId);
+            
+            // Emitir evento de timeout removido (expirado)
+            eventBus.emit({
+                type: DomainEventType.TIMEOUT_REMOVED,
+                payload: {
+                    groupId: groupId,
+                    memberId: memberId,
+                    reason: 'expired'
+                },
+                metadata: {
+                    groupId: groupId,
+                    userId: memberId
+                }
+            });
+            
             return;
         }
 
         await whatsAppRepository.sendMessage({
             chatId: chat.id._serialized, 
-            message: `BOT: CALMA ${whatsAppRepository.getNotifyName(msg).toUpperCase()}, VOCE ESTA DE BOCA CHEIA GLUB GLUB GLUB 🍆🍆🍆`
+            message: `BOT: CALMA ${whatsAppRepository.getNotifyName(message).toUpperCase()}, VOCE ESTA DE BOCA CHEIA GLUB GLUB GLUB 🍆🍆🍆`
         });
-        msg.delete(true);
+        message.delete(true);
     }
 
 }
